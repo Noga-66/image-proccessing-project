@@ -116,29 +116,6 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
----
 
-## 📚 Academic Notes
-
-* All algorithms are implemented **manually using NumPy**.
-* No OpenCV high‑level processing functions were used.
-* Designed to meet **CS303 – Image Processing** course requirements.
-
----
-
-## 👩‍💻 Author
-
-**Name:** *(Your Name)*
-**Course:** CS303 – Image Processing
-
----
-
-## ✅ Status
-
-✔ Fully implemented
-✔ Deployed successfully
-✔ Ready for submission
-
----
 
 ✨ *This project demonstrates a strong understanding of image processing fundamentals and manual pixel manipulation.*
