@@ -1,10 +1,10 @@
+
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage import io, transform
 import random
 import math
-from scipy.ndimage import convolve  # لتحسين الأداء في الفلاتر
 
 # Initialize session state for images
 if 'original_image' not in st.session_state:
@@ -58,7 +58,7 @@ if uploaded_file is not None:
 uploaded_file2 = st.file_uploader("Upload 2nd Image", type=['png', 'jpg', 'jpeg'], key="upload2")
 if uploaded_file2 is not None and st.session_state.original_image is not None:
     img2 = io.imread(uploaded_file2)
-    img2 = transform.resize(img2, st.session_state.original_image.shape[:2], preserve_range=True, anti_aliasing=True).astype(np.uint8)
+    img2 = transform.resize(img2, st.session_state.original_image.shape[:2], preserve_range=True).astype(np.uint8)
     st.session_state.img2 = img2
     display_images(st.session_state.img2, title1="Second Image")
 
@@ -66,8 +66,6 @@ if st.button("RGB to Gray (Manual)"):
     if st.session_state.original_image is not None:
         st.session_state.processed_image = ensure_gray(st.session_state.original_image)
         display_images(st.session_state.original_image, st.session_state.processed_image, "RGB", "Gray")
-    else:
-        st.error("Please upload an image first!")
 
 # Point Operations
 st.header("Point Operations")
@@ -82,52 +80,38 @@ if st.button("Apply Brightness"):
             res = img * brightness_val
         st.session_state.processed_image = np.clip(res, 0, 255).astype(np.uint8)
         display_images(st.session_state.original_image, st.session_state.processed_image, "Original", f"Brightness ({brightness_op})")
-    else:
-        st.error("Please upload an image first!")
 
 darkness_op = st.selectbox("Darkness Operation", ["sub", "div"], key="dark_op")
-darkness_val = st.number_input("Value", value=1.0, key="dark_val")  # Changed default to 1 to avoid div by zero
+darkness_val = st.number_input("Value", value=0.0, key="dark_val")
 if st.button("Apply Darkness"):
     if st.session_state.original_image is not None:
         img = ensure_gray(st.session_state.original_image).astype(float)
         if darkness_op == "sub":
             res = img - darkness_val
         else:
-            if darkness_val == 0:
-                st.error("Division by zero! Choose a non-zero value.")
-                res = img
-            else:
-                res = img / darkness_val
+            res = np.where(darkness_val != 0, img / darkness_val, img)
         st.session_state.processed_image = np.clip(res, 0, 255).astype(np.uint8)
         display_images(st.session_state.original_image, st.session_state.processed_image, "Original", f"Darkness ({darkness_op})")
-    else:
-        st.error("Please upload an image first!")
 
 if st.button("Inverse (Negative)"):
     if st.session_state.original_image is not None:
         img = ensure_gray(st.session_state.original_image)
         st.session_state.processed_image = 255 - img
         display_images(st.session_state.original_image, st.session_state.processed_image, "Original", "Negative")
-    else:
-        st.error("Please upload an image first!")
 
 # Arithmetic Operations
 st.header("Arithmetic Operations")
 if st.button("Add Two Images"):
-    if st.session_state.img2 is not None and st.session_state.original_image is not None:
+    if st.session_state.img2 is not None:
         res = np.clip(ensure_gray(st.session_state.original_image).astype(int) + ensure_gray(st.session_state.img2).astype(int), 0, 255)
         st.session_state.processed_image = res.astype(np.uint8)
         display_images(st.session_state.original_image, st.session_state.processed_image, "Img1", "Sum")
-    else:
-        st.error("Please upload both images!")
 
 if st.button("Subtract Two Images"):
-    if st.session_state.img2 is not None and st.session_state.original_image is not None:
+    if st.session_state.img2 is not None:
         res = np.clip(ensure_gray(st.session_state.original_image).astype(int) - ensure_gray(st.session_state.img2).astype(int), 0, 255)
         st.session_state.processed_image = res.astype(np.uint8)
         display_images(st.session_state.original_image, st.session_state.processed_image, "Img1", "Diff")
-    else:
-        st.error("Please upload both images!")
 
 # Histogram Operations
 st.header("Histogram Operations")
@@ -135,54 +119,53 @@ if st.button("Show Histogram"):
     if st.session_state.original_image is not None:
         img = ensure_gray(st.session_state.original_image)
         show_histogram(img)
-    else:
-        st.error("Please upload an image first!")
 
 if st.button("Contrast Stretching"):
     if st.session_state.original_image is not None:
         img = ensure_gray(st.session_state.original_image)
         mn, mx = img.min(), img.max()
-        if mn == mx:
-            st.warning("Image has no contrast to stretch.")
-            res = img
-        else:
-            res = ((img - mn) / (mx - mn) * 255).astype(np.uint8)
+        res = ((img - mn) / (mx - mn) * 255).astype(np.uint8)
         st.session_state.processed_image = res
         display_images(st.session_state.original_image, res, "Original", "Contrast Stretched")
-    else:
-        st.error("Please upload an image first!")
 
 if st.button("Histogram Equalization"):
     if st.session_state.original_image is not None:
         img = ensure_gray(st.session_state.original_image)
-        hist = np.histogram(img.flatten(), bins=256, range=(0, 256))[0]  # استخدام NumPy للسرعة
-        cdf = np.cumsum(hist)
-        cdf_min = cdf[np.nonzero(cdf)[0][0]] if np.any(cdf) else 0  # تجنب القسمة على صفر
-        cdf_norm = ((cdf - cdf_min) / (img.size - cdf_min) * 255).astype(np.uint8) if img.size > cdf_min else cdf.astype(np.uint8)
-        eq_img = cdf_norm[img]
+        hist = compute_hist(img)
+        cdf = np.zeros(256)
+        cdf[0] = hist[0]
+        for i in range(1, 256):
+            cdf[i] = cdf[i - 1] + hist[i]
+        cdf_norm = np.round((cdf / img.size) * 255).astype(np.uint8)
+        h, w = img.shape
+        eq_img = np.zeros_like(img)
+        for i in range(h):
+            for j in range(w):
+                eq_img[i, j] = cdf_norm[img[i, j]]
         st.session_state.processed_image = eq_img
         display_images(st.session_state.original_image, eq_img, "Original", "Equalized")
-    else:
-        st.error("Please upload an image first!")
 
 # Linear Filters
 st.header("Linear Filters")
 filter_type = st.selectbox("Filter Type", ["mean", "gaussian", "laplacian"], key="linear_filter")
 if st.button("Apply Linear Filter"):
     if st.session_state.original_image is not None:
-        img = ensure_gray(st.session_state.original_image).astype(float)
+        img = ensure_gray(st.session_state.original_image)
         if filter_type == "mean":
             kernel = np.ones((3, 3)) / 9
         elif filter_type == "gaussian":
             kernel = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]]) / 16
         elif filter_type == "laplacian":
             kernel = np.array([[0, -1, 0], [-1, 4, -1], [0, -1, 0]])
-        # استخدام scipy لتسريع بدل الـ loops
-        out = convolve(img, kernel, mode='nearest')
+        h, w = img.shape
+        padded = np.pad(img, 1, mode='constant')
+        out = np.zeros((h, w))
+        for i in range(h):
+            for j in range(w):
+                region = padded[i:i+3, j:j+3]
+                out[i, j] = np.sum(region * kernel)
         st.session_state.processed_image = np.clip(out, 0, 255).astype(np.uint8)
         display_images(st.session_state.original_image, st.session_state.processed_image, "Original", f"{filter_type} Filter")
-    else:
-        st.error("Please upload an image first!")
 
 # Non-Linear Filters
 st.header("Non-Linear Filters")
@@ -193,7 +176,6 @@ if st.button("Apply Non-Linear Filter"):
         h, w = img.shape
         padded = np.pad(img, 1, mode='edge')
         out = np.zeros((h, w), dtype=np.uint8)
-        progress_bar = st.progress(0)  # إضافة progress bar
         for i in range(h):
             for j in range(w):
                 region = padded[i:i+3, j:j+3].flatten()
@@ -209,11 +191,8 @@ if st.button("Apply Non-Linear Filter"):
                     counts = np.bincount(region)
                     val = np.argmax(counts)
                 out[i, j] = val
-            progress_bar.progress((i + 1) / h)
         st.session_state.processed_image = out
         display_images(st.session_state.original_image, out, "Original", f"{nl_filter_type} Filter")
-    else:
-        st.error("Please upload an image first!")
 
 # Add Noise
 st.header("Add Noise")
@@ -231,8 +210,6 @@ if st.button("Salt & Pepper Noise"):
                     img[i, j] = 255
         st.session_state.processed_image = img
         display_images(st.session_state.original_image, img, "Original", "Salt & Pepper")
-    else:
-        st.error("Please upload an image first!")
 
 if st.button("Gaussian Noise"):
     if st.session_state.original_image is not None:
@@ -241,23 +218,18 @@ if st.button("Gaussian Noise"):
         noisy = img + gauss
         st.session_state.processed_image = np.clip(noisy, 0, 255).astype(np.uint8)
         display_images(st.session_state.original_image, st.session_state.processed_image, "Original", "Gaussian Noise")
-    else:
-        st.error("Please upload an image first!")
 
 if st.button("Periodic Noise"):
     if st.session_state.original_image is not None:
         img = ensure_gray(st.session_state.original_image).astype(float)
         h, w = img.shape
         noisy = np.zeros_like(img)
-        freq_i, freq_j = 10, 10  # إضافة ترددات للضوضاء الدورية ثنائية الأبعاد
         for i in range(h):
             for j in range(w):
-                noise = 50 * math.sin(2 * math.pi * (i / freq_i + j / freq_j))
+                noise = 50 * math.sin(i / 2)
                 noisy[i, j] = img[i, j] + noise
         st.session_state.processed_image = np.clip(noisy, 0, 255).astype(np.uint8)
         display_images(st.session_state.original_image, st.session_state.processed_image, "Original", "Periodic Noise")
-    else:
-        st.error("Please upload an image first!")
 
 # Morphology
 st.header("Morphology")
@@ -304,8 +276,6 @@ if st.button("Apply Morphology"):
                     out[i, j] = np.min(region)
             st.session_state.processed_image = out
         display_images(st.session_state.original_image, st.session_state.processed_image, "Original", morph_op.title())
-    else:
-        st.error("Please upload an image first!")
 
 # Segmentation & Dithering
 st.header("Segmentation & Dithering")
@@ -326,8 +296,6 @@ if st.button("Auto Thresholding"):
         binary[img > T] = 255
         st.session_state.processed_image = binary
         display_images(st.session_state.original_image, binary, "Original", f"Auto Threshold T={int(T)}")
-    else:
-        st.error("Please upload an image first!")
 
 if st.button("Floyd-Steinberg Dithering"):
     if st.session_state.original_image is not None:
@@ -340,7 +308,16 @@ if st.button("Floyd-Steinberg Dithering"):
                 img[y, x] = new_pixel
                 quant_error = old_pixel - new_pixel
                 if x + 1 < w:
-                    img[y, x + 1] += quant_error * 
+                    img[y, x + 1] += quant_error * 7 / 16
+                if x - 1 >= 0 and y + 1 < h:
+                    img[y + 1, x - 1] += quant_error * 3 / 16
+                if y + 1 < h:
+                    img[y + 1, x] += quant_error * 5 / 16
+                if x + 1 < w and y + 1 < h:
+                    img[y + 1, x + 1] += quant_error * 1 / 16
+        st.session_state.processed_image = np.clip(img, 0, 255).astype(np.uint8)
+        display_images(st.session_state.original_image, st.session_state.processed_image, "Original", "Floyd-Steinberg Dithering")
+
 
 
 
