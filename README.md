@@ -11,7 +11,7 @@ The app allows users to upload images and apply a wide range of image processing
 
 ## 🚀 Live Demo
 
-🔗 **Deployed App:** *(Add your Streamlit Cloud link here)*
+🔗 **Deployed App:** *(https://image-proccessing-project-mwclykqq8luuseawpmimyq.streamlit.app/)*
 
 ---
 
